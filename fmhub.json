@@ -1,0 +1,8 @@
+{
+  "what": "The smallest firmware for the M-Vave SMK-37 to build your own on: a sine on the keys and pads with velocity, USB MIDI in and out, and every control shown on the screen. The update path, USB rescue, audio, pads, LEDs and flash storage are done; the app is one short file.",
+  "author": "fc79",
+  "kinds": [
+    "other"
+  ],
+  "image": "docs/card.png"
+}
