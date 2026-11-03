@@ -74,7 +74,8 @@ jobs:
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
+          # the release builds, not the dev ones; no comment inside the list: it would become part of the pattern
           files: |
-            build/smk37-base-[0-9]*.fwsc   # (the release builds, not the dev ones: smk37-base.fwsc)
+            build/smk37-base-[0-9]*.fwsc
             build/SHA256SUMS
           generate_release_notes: true
