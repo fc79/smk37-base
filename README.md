@@ -10,12 +10,12 @@ used once in [firmware/src/app.c](firmware/src/app.c), as an example and as a ch
 <img src="docs/screen.png" width="240" alt="SMK BASE on the SMK-37: the name, the version and identity, the last control touched (key 12, velocity 90), the encoders' positions, the faders and wheels, the octave">
 </p>
 
-It is Drumtonic without the drum machine and without the FM-1: the same
-[Dinghy](docs/DINGHY.md) platform (zvenson), on Felucca's and SLOOP's, with genkigenki's SMK-37 layer and Drumtonic's
-pad fixes.
+It is [Dinghy](https://github.com/zvenson/dinghy) (zvenson) for the SMK-37 only, on Felucca's and SLOOP's platform and
+genkigenki's SMK-37 layer, with the pads tuned on a unit and the controls on the screen. What changed from Dinghy:
+[docs/CHANGES.md](docs/CHANGES.md).
 
-> **Status.** SMK-37 Pro: installed over Drumtonic and checked on one unit on 2026-11-03 (every control, sound, the
-> screen). Not tried yet: the SMK-37 Elite and MKE-P37 packages. Installing firmware is at your own risk: back up the
+> **Status.** SMK-37 Pro: installed and checked on one unit on 2026-11-03 (every control, sound, the screen). Not
+> tried yet: the SMK-37 Elite and MKE-P37 packages. Installing firmware is at your own risk: back up the
 > flash first.
 
 ## What it does
@@ -36,16 +36,18 @@ pad fixes.
 1. Copy this folder (or `git clone` it) under a new name.
 2. Change `firmware/src/app.c`: `app_audio()` is the sound (the audio interrupt: short, no flash, no screen),
    `app_main()` the main loop (controls, MIDI, screen, saving). What the platform offers: [docs/API.md](docs/API.md);
-   the chip's rules (no FPU, no 64-bit division, the interrupt's budget): [docs/RULES.md](docs/RULES.md); the board:
-   [docs/SMK37.md](docs/SMK37.md).
-3. Give it its own name and identity, so it never takes another firmware's data or looks like it
-   ([docs/MAKE-IT-YOURS.md](docs/MAKE-IT-YOURS.md)):
+   the chip's rules (no FPU, no 64-bit division, the interrupt's budget): [docs/RULES.md](docs/RULES.md).
+3. Give it its own name, data and identity, so it never takes another firmware's data or looks like it to the
+   installers and the [Firmware Hub](https://thefirmwarehub.com):
    - `APP_NAME` and `STORE_MAGIC` at the top of `app.c`;
-   - `DATA_FAMILY`, `SCREEN_NAME`, `SCREEN_COLOUR`, `IDENT` and the package name in `tools/build.py`;
+   - `DATA_FAMILY`, `IDENT` (a `9NN` no other firmware uses: look at the hub) and the package name in
+     `tools/build.py`;
    - the package names in `.github/workflows/release.yml`.
 
-`platform.c`, `firmware/hal/` and `firmware/loader/` you should not need to touch. They keep the FM-1's code paths of
-the platform they come from; this repository builds and tests only the SMK-37.
+`platform.c`, `firmware/hal/` and `firmware/loader/` you should not need to touch.
+
+A release: `./build.sh --release 0.2` puts the version on the screen (`build/smk37-base-0.2.fwsc`); pushing a tag
+`v0.2` to GitHub builds the three packages, runs the tests and publishes them.
 
 ## Build and test
 
@@ -79,8 +81,8 @@ Python 3 with `pip3 install mido python-rtmidi`, the SMK-37 on USB, no other app
    python3 tools/fm1_install.py build/smk37-base.fwsc --yes  # identity SMK-37 Pro_925
    ```
 
-3. **The first start clears the store** when another firmware's data is there (the stock settings, or Drumtonic's
-   kits and patterns): the settings and blobs from 0x9D000, the slots' first sectors from 0xC2000, the owner tag at
+3. **The first start clears the store** when another firmware's data is there (the stock settings, or another
+   firmware's): the settings and blobs from 0x9D000, the slots' first sectors from 0xC2000, the owner tag at
    0xAF000 ([store.h](firmware/src/store.h)). Your backup has them.
 
 **If it goes wrong:** cut off during the write, power-cycle and run the install again (the loader resumes). If it does

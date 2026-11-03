@@ -5,8 +5,8 @@ bootloader (a USB disk "WL82 UBOOT1.00", 4C4A:8057), where jl-uboot-tool reads t
 power cycle (or a short while with nobody talking to it) brings back what ran before.
 
 The stock app understands the key too, on an 8-byte USB transfer on cable 0 (the port "SMK-37 Pro-Private"; checked
-on v015 and v016, re/REPORT.md 10.4; the stock FM-1_015 on its port "FM-1", tried on a unit), as do Felucca-family
-firmwares (Dinghy, Drumtonic) and their update loaders.
+on v015 and v016; the stock FM-1_015 on its port "FM-1", tried on a unit), as do Felucca-family firmwares (Dinghy,
+SMK BASE) and their update loaders.
 
     python3 tools/backup/uboot_key.py           checks only: the port answers the identity query
     python3 tools/backup/uboot_key.py --send    sends the key and waits up to 20 s for the UBOOT disk

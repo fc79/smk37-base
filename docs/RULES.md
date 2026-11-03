@@ -1,7 +1,7 @@
 # The chip's rules
 
-The FM-1 runs a JieLi AC791N with JieLi's own clang (pi32v2). It is fast enough for a lot of synth, but it
-has habits. These are the ones that cost the SLOOP / sloopDX / zp12 people time; the build catches most of them.
+The SMK-37 runs a JieLi AC791N with JieLi's own clang (pi32v2). It is fast enough for a lot of synth, but it
+has habits. The build catches most of them.
 
 ## Integers only
 
@@ -9,8 +9,8 @@ has habits. These are the ones that cost the SLOOP / sloopDX / zp12 people time;
   Q15 (a value times 32768) for levels, Q12 for gains, a 32-bit phase for oscillators.
 - **No 64-bit division.** `int64_t` multiplication is fine; `a / b` or `a % b` on 64-bit values needs
   `__udivdi3`, which is not there: the link fails. Shift instead, or divide 32-bit values.
-- **A division by zero does not crash.** It gives a wrong value (the trap is off, as SLOOP has it, because the
-  compiler may compute a division ahead of the test that guards it). Test your divisors.
+- **A division by zero does not crash.** It gives a wrong value (the trap is off, because the compiler may compute
+  a division ahead of the test that guards it). Test your divisors.
 - Compute constants on your computer and write them into the source as numbers (see `INC_C9` in app.c).
 
 ## The build checks
@@ -28,7 +28,7 @@ has habits. These are the ones that cost the SLOOP / sloopDX / zp12 people time;
 ## The audio interrupt
 
 `app_audio()` has 5.8 ms for 256 frames, and less in practice: the USB and the key scan interrupt it. When it
-runs late the sound crackles; when it never ends the watchdog resets the FM-1.
+runs late the sound crackles; when it never ends the watchdog resets the keyboard.
 
 - Do the work per frame that has to be per frame. Envelopes, filters' coefficients, LFOs: once per block of
   16 or 32 frames is plenty.
@@ -47,10 +47,10 @@ runs late the sound crackles; when it never ends the watchdog resets the FM-1.
 ## When it crashes
 
 A fault shows a red screen with three numbers: the vector, the **PC** (where it happened) and the return
-address. Look the PC up in `build/dinghy.dis` (the disassembly the build writes). Then it restarts.
+address. Look the PC up in `build/app.dis` (the disassembly the build writes). Then it restarts.
 
-If it crashes during boot, twice, the FM-1 starts in the USB rescue by itself, where the updater still works:
-install a fixed build. You can always force the rescue: hold **OCT-** while switching on.
+If it crashes during boot, twice, the keyboard starts in the USB rescue by itself, where the updater still works:
+install a fixed build. You can always force the rescue: hold **OCTAVE-** while switching on.
 
-If even that is gone (the app is broken before it gets to its boot guard), the FM-1's own boot ROM still
-updates over USB: [FM-1-transporter](https://github.com/kurogedelic/FM-1-transporter) gets it back.
+If even that is gone (the app is broken before it gets to its boot guard), the chip's mask-ROM bootloader is always
+there below: [BACKUP.md](BACKUP.md).

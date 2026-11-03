@@ -452,8 +452,8 @@ static void fm1__frame(void)
 #define SMK_PAD_RELN 4u           /* readings in a row below base + SMK_PAD_OFF: released (~10 ms) */
 #define SMK_PAD_HOLD 8u           /* then a new hit only after this many readings in a row below base + OFF (~19 ms):
                                    * the rubber's rebound and a finger resting near the thresholds hit twice
-                                   * otherwise (the stock firmware waits 24 readings and averages 16, re/REPORT.md
-                                   * 10.3; a unit, 2026-10-28: echoes 35 ms after light hits with a plain wait) */
+                                   * otherwise (the stock firmware waits 24 readings and averages 16; a unit,
+                                   * 2026-10-28: echoes 35 ms after light hits with a plain wait) */
 #define SMK_PAD_WAITMAX 167u      /* ... or ~400 ms after the release, whatever the reading */
 #define SMK_PAD_XWIN 6u           /* crosstalk: a hit started within this many readings (~14 ms) of another one ... */
 #define SMK_PAD_XRATIO 3u         /* ... and under a third of its height above the baseline is the other's echo (a
@@ -462,11 +462,11 @@ static uint16_t smk_pad_clock;            /* one tick per round of the 24 analog
 
 #define SMK_PAD_TOP 1000u         /* the reading of a full hit -> 127 (a unit, 2026-10-28: rest ~0; light hits 170..220,
                                    * medium 300..740, hard 900..984; 760 and 880 put every hard hit at 127; the factory
-                                   * record's curves end at 950). The app shapes it (Drumtonic: pad_curves.h) */
+                                   * record's curves end at 950). An app may shape it with a curve of its own */
 static uint32_t smk__pad_vel(uint32_t p, uint32_t peak)   /* straight from where a hit starts to SMK_PAD_TOP */
 {
     uint32_t lo = fm1_in.pad_base[p] + SMK_PAD_ON;      /* (the stock firmware too keeps the record's pad curves */
-    (void)smk_trim_pad;                                 /* out of the velocity: re/REPORT.md 10.3) */
+    (void)smk_trim_pad;                                 /* out of the velocity) */
     if (peak <= lo)
         return 1;
     if (peak >= SMK_PAD_TOP || lo >= SMK_PAD_TOP)

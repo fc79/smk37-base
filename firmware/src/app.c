@@ -15,7 +15,7 @@
  *
  * Rules of the road (the chip has no FPU and no libgcc): integers only, no float, no 64-bit division.
  * tests/run_host.sh runs this file on a computer: the screen as PNG, the sound as WAV.
- * What platform.c offers: docs/API.md. The chip's rules: docs/RULES.md. The board: docs/SMK37.md. */
+ * What platform.c offers: docs/API.md. The chip's rules: docs/RULES.md. */
 #define APP_NAME "SMK BASE"
 #define STORE_MAGIC 0x37334253u                 /* "SB37": settings and blobs (store.h); a firmware of yours: your own */
 static void app_idle(void);

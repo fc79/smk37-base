@@ -1,11 +1,11 @@
-# Backing up the flash of an SMK-37 or FM-1, and putting it back
+# Backing up the SMK-37's flash, and putting it back
 
 Before any custom firmware goes on an SMK-37, read its whole flash (1 MiB) and keep it. Two ranges are unique to
 your keyboard and are in no package: `0xC0000-0xC1FFF` (Bluetooth pairing, the key / pad / wheel calibration
 `trimdat`) and `0xFF000-0xFFFFF` (key_mac). The rest of the stock image can always come back from M-Vave's package.
 
-This is how it was done on an SMK-37 Pro (stock v015) and an FM-1 (stock FM-1_015) on 2026-10-28, from a Mac,
-**without writing anything** to the keyboard. The FM-1 goes the same way; the differences are in "On an FM-1" below. Linux and Windows need the same steps with the stock jl-uboot-tool (no adapter).
+This reads the flash **without writing anything** to the keyboard. It was done from a Mac on an SMK-37 Pro (stock
+v015); Linux and Windows need the same steps with the stock jl-uboot-tool (no adapter).
 
 ## What you need
 
@@ -26,12 +26,10 @@ This is how it was done on an SMK-37 Pro (stock v015) and an FM-1 (stock FM-1_01
 
 ## Reading the flash
 
-1. **The mask-ROM bootloader, without writing.** The stock firmware itself enters it on the UBOOT soft key
-   `F0 22 24 35 7D F7`, sent as one 8-byte USB-MIDI transfer on cable 0, the port "SMK-37 Pro-Private" (its handler
-   writes `usb_update_mode` to a RAM mailbox and resets the chip: `re/REPORT.md` 10.4 in the analysis this came
-   from). So do Dinghy, Drumtonic, SMK BASE and their update loaders. The ROM shows up as a USB disk `WL82 UBOOT1.00`
-   (4C4A:8057) and **goes back to the firmware by itself after a short while** if nobody talks to it, so start the
-   reader first:
+1. **The mask-ROM bootloader, without writing.** The stock firmware enters it on the UBOOT soft key
+   `F0 22 24 35 7D F7`, sent as one 8-byte USB-MIDI transfer on cable 0, the port "SMK-37 Pro-Private". So do
+   SMK BASE and its update loader. The ROM shows up as a USB disk `WL82 UBOOT1.00` (4C4A:8057) and **goes back to the
+   firmware by itself after a short while** if nobody talks to it, so start the reader first:
 
    ```sh
    cd JLTOOL && sudo python3 jluboottool.py --device usb:4c4a:8057 --chip wl82 \
@@ -55,28 +53,15 @@ This is how it was done on an SMK-37 Pro (stock v015) and an FM-1 (stock FM-1_01
    ```
 
    Both must be 1,048,576 bytes and identical, with `trimdat` at 0xC1224. With `flash.bin` unpacked from the stock
-   package your keyboard ran, it also shows how much of the app area matches (on the unit above: 154 of 156 sectors;
-   the two others hold what the install writes).
+   package your keyboard ran, it also shows how much of the app area matches.
 
 3. **Power-cycle** the keyboard: what ran before comes back. Keep the dump in two places.
 
-The unit above: chip key 0x980F, flash id **0x856014** (the fm1-to-smk37 guide's unit read 0xEB6014; Dinghy takes
-both).
-
-### On an FM-1
-
-- The stock app (FM-1_015) takes the same soft key on its only port, "FM-1": `uboot_key.py` finds it by itself.
-- Check with `verify_dump.py --fm1 dump-1.bin dump-2.bin`: the FM-1 has no `trimdat` record at 0xC1224.
-- The unit read here: chip key 0x980F, flash id 0x856014, the head 0x0000-0x3FFF byte-identical to the SMK's. Used:
-  0x00000-0x93FFF (the app), 0xE9000-0xF1FFF and 0xFA000-0xFBFFF (stock data); Drumtonic's store (settings 0xFC000,
-  kit and patterns 0xF4000-0xF5FFF) was empty. Keep the whole dump all the same: the FM-1's store is shared by the
-  firmwares of its family, and other units may differ.
-
 ## Putting it back
 
-Not tried yet on the unit above: the steps are the fm1-to-smk37 guide's (section 5.1), in whole 4 KiB sectors, in the
-mask-ROM bootloader. **Never** write `0x0000-0x3FFF`, `0xC0000-0xC1FFF` or `0xFF000-0xFFFFF` unless they were damaged,
-and then only from your own dump.
+Not tried yet: the steps are the [fm1-to-smk37](https://github.com/genkigenki/fm1-to-smk37) guide's (section 5.1),
+in whole 4 KiB sectors, in the mask-ROM bootloader. **Never** write `0x0000-0x3FFF`, `0xC0000-0xC1FFF` or
+`0xFF000-0xFFFFF` unless they were damaged, and then only from your own dump.
 
 ```sh
 # the app area (0x4000-0x9CFFF) and the stock settings (0x9D000-0xBFFFF), cut from your dump
@@ -90,4 +75,6 @@ cmp app-store.bin check.bin
 jl-uboot-tool's `erase` works in 4 KiB sectors up to a 64 KiB boundary and in 64 KiB blocks only where a whole block
 lies in the range, so `0x4000 + 0xBC000` stays inside `0x4000-0xBFFFF`.
 
-The other way back, M-Vave's package, is in the [README](../README.md#back-to-the-stock-firmware).
+The other way back is M-Vave's package for your keyboard, with M-Vave's updater or the
+[Firmware Hub](https://thefirmwarehub.com/smk37/). One report says the official updater, run from a custom firmware,
+erased an SMK-37's calibration: keep your dump.

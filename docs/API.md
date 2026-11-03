@@ -1,12 +1,13 @@
-# Dinghy API
+# API
 
 Everything [platform.c](../firmware/src/platform.c) gives your app. One compilation unit: `app.c` includes
 `platform.c` first, so all of this is just there. Nothing here is a library you link against; read the source
-when in doubt, it is short.
+when in doubt, it is short. The names start with `fm1_`: the platform comes from the M-Vave FM-1, which has the same
+chip, and the SMK-37 keeps its calls.
 
 - [The contract](#the-contract)
 - [Time](#time)
-- [Keys, buttons, encoders](#keys-buttons-encoders)
+- [Keys, pads, buttons, encoders, faders, wheels](#keys-pads-buttons-encoders-faders-wheels)
 - [LEDs](#leds)
 - [Screen](#screen)
 - [Sound](#sound)
@@ -14,7 +15,6 @@ when in doubt, it is short.
 - [Storage: settings, blobs, slots](#storage-settings-blobs-slots)
 - [Memory and flash](#memory-and-flash)
 - [Build options](#build-options)
-- [The SMK-37](#the-smk-37)
 
 ## The contract
 
@@ -26,8 +26,8 @@ static void app_main(void);                        /* your main loop; never retu
 ```
 
 `app_main` must call **`platform_poll()`** often: every few milliseconds, and never less than once every
-couple of seconds. It feeds the watchdog (8 s, then the FM-1 resets), runs USB (MIDI, the updater, a computer
-asking for the update mode) and reads the MASTER knob. A long job (drawing a lot, saving) is fine; a loop that
+couple of seconds. It feeds the watchdog (8 s, then the keyboard resets), runs USB (MIDI, the updater, a computer
+asking for the update mode) and turns K1 into the volume. A long job (drawing a lot, saving) is fine; a loop that
 waits for something must poll.
 
 ```c
@@ -41,9 +41,9 @@ static void app_main(void)
 }
 ```
 
-Names the platform defines that you can change from the build: `APP_NAME` (the rescue and crash screens,
-default `"DINGHY"`), `APP_VER` (set by `./build.sh --release`), `FELUCCA_ID` (the package identity; see
-[MAKE-IT-YOURS.md](MAKE-IT-YOURS.md)).
+Names you can set before `#include "platform.c"`: `APP_NAME` (the rescue and crash screens), `STORE_MAGIC` (your
+data, see [Storage](#storage-settings-blobs-slots)). `APP_VER` comes from `./build.sh --release`, `FELUCCA_ID` (the
+package identity) from `tools/build.py`.
 
 ## Time
 
@@ -56,33 +56,44 @@ default `"DINGHY"`), `APP_VER` (set by `./build.sh --release`), `FELUCCA_ID` (th
 
 To time your audio code: `t0 = fm1_ticks()` before, `(fm1_ticks() - t0) / FM1_TICKS_PER_US` after.
 
-## Keys, buttons, encoders
+## Keys, pads, buttons, encoders, faders, wheels
 
-The panel is scanned at 10 kHz in the background and debounced.
+The panel is scanned in the background and debounced.
 
 | | |
 | --- | --- |
-| `fm1_in.notes` | the 27 keys held now: bit 0 = F3 ... bit 26 = G5 |
-| `fm1_in.buttons` | the 14 buttons held now: bit = `BTN_...` |
+| `fm1_in.notes` | the middle 27 keys held now: bit 0 = F3 ... bit 26 = G5 (keybed keys `SMK_KEY_F3` (5) .. 31) |
+| `fm1_input_note_edges()` | those keys pressed since the last call (bits): a press shorter than a loop pass still counts |
+| `fm1_in.key_vel[key]` | the velocity (1..127) of a keybed key's last press (key 0..36, 0 = the lowest C), from the unit's factory curves |
+| `smk_extkey_take()` | the outer keys (C3..E3, G#5..C6): `key << 8 \| velocity` (0 = let go, key 0..36), -1 = none |
+| `fm1_in.keys` | all 37 keys held now (64 bits, bit 0 = the lowest C) |
+| `fm1_in.buttons` | the 18 buttons held now: bit = `BTN_...` |
 | `fm1_input_edges(&released)` | buttons **pressed** since the last call (bits), and those released into `released` |
-| `fm1_input_note_edges()` | keys pressed since the last call (bits): a press shorter than a loop pass still counts |
 | `fm1_enc_take(ENC_...)` | detents turned since the last call, + = clockwise |
-| `fm1_adc_read(FM1_ADC_MASTER)` | the MASTER knob, 0..1023 (-1 = not ready). platform.c already makes it the volume |
-| `fm1_adc_read(FM1_ADC_BATT)` | the battery voltage, raw |
+| pads | by default the 16 white keys F3..G5 (they set `fm1_in.notes`); `smk_pad_events = 1` makes them events instead: `smk_pad_take()` = `pad << 8 \| velocity` (0 = let go), -1 = none. Pads 0..7 are the top row, 8..15 the bottom row |
+| `fm1_in.pad_press[pad]` | a held pad's pressure, 0..127 |
+| `fm1_in.fader[0..3]` | the faders, 0..127 |
+| `fm1_in.wheel[0]`, `[1]` | the pitch and the mod wheel, raw 0..1023; `smk_pw_bend()` ([smk_wheel.h](../firmware/src/smk_wheel.h)) makes the pitch wheel a self-calibrating bend |
 
-Buttons (ids 0..13):
+Buttons (ids 0..17), by the names printed on the panel:
 
-| id | | id | | id | |
+| id | | panel | id | | panel |
 | --- | --- | --- | --- | --- | --- |
-| 0 | `BTN_OCT_DOWN` | 5 | `BTN_LFO` | 10 | `BTN_ARP` |
-| 1 | `BTN_OCT_UP` | 6 | `BTN_EDIT` | 11 | `BTN_SEQ` |
-| 2 | `BTN_FX` | 7 | `BTN_GLO` | 12 | `BTN_PLAY` |
-| 3 | `BTN_SEL` | 8 | `BTN_HOME` | 13 | `BTN_REC` |
-| 4 | `BTN_ENV` | 9 | `BTN_SAVE` | | |
+| 0 | `BTN_KNOB_BANK` | KNOB BANK | 9 | `BTN_ENV` | CHORD |
+| 1 | `BTN_FADER_BANK` | FADER BANK | 10 | `BTN_GLO` | GLOBE |
+| 2 | `BTN_LEFT` | < | 11 | `BTN_SAVE` | BT |
+| 3 | `BTN_RIGHT` | > | 12 | `BTN_HOME` | PATCH |
+| 4 | `BTN_OCT_DOWN` | OCTAVE- | 13 | `BTN_EDIT` | PARA |
+| 5 | `BTN_OCT_UP` | OCTAVE+ | 14 | `BTN_FX` | FX |
+| 6 | `BTN_ARP` | ARP | 15 | `BTN_SEQ` | SEQ |
+| 7 | `BTN_LFO` | NOTE REPEAT | 16 | `BTN_PLAY` | SEQ PLAY |
+| 8 | `BTN_SEL` | SCALE | 17 | `BTN_REC` | SEQ REC |
 
 `BTN_OCT_DOWN` held at power-on is the USB rescue; your app sees it like any button otherwise.
 
-Encoders: `ENC_SELECT` (0), `ENC_ALGORITHM` (1), `ENC_KNOB1` .. `ENC_KNOB4` (2..5), `ENC_PRESETS` (6).
+Encoders: `ENC_MASTER` (K1, the volume: platform.c reads it), `ENC_SELECT` (K2), `ENC_ALGORITHM` (K3),
+`ENC_PRESETS` (K4), `ENC_KNOB1` .. `ENC_KNOB4` (K5..K8). To use K1 yourself, `#define SMK_MASTER_FROM_APP 1` before
+`#include "platform.c"` and set the volume (`smk_master`) on your own.
 
 A key down and up, the usual way:
 
@@ -95,9 +106,8 @@ prev = keys;
 
 | | |
 | --- | --- |
-| `fm1_led_key(id, on)` | a button (`BTN_...`) or a key (`KEY_LED(k)`, k = 0..26) lit or not |
-| `fm1_led_key_glow(id, on)` | the same LED dimly (~1/24): "there is something here" (landmarks, a step that is set) |
-| `fm1_led[col]`, `fm1_led_dim[col]` | the raw layers, for many LEDs at once (see `hal/fm1_input.h`) |
+| `fm1_led_key(BTN_..., on)` | a button's LED lit or not (the keys have no LEDs) |
+| `padled_set(pad, r, g, b)`, `padled_flush()` | the pads' colours (0..255 each); the flush sends only what changed (~1 ms) |
 
 ## Screen
 
@@ -130,7 +140,7 @@ A bigger canvas: `#define CV_MAX (240u * 120u)` before `#include "platform.c"` (
 
 **Nothing waits for a redraw.** A canvas goes out by DMA, a strip of 240 x 64 in some 3 ms. Define `LCD_IDLE` before
 `#include "platform.c"` and lcd.c calls it again and again while it waits for the DMA, so your app reads MIDI (or the
-keys) meanwhile; without it, a chord or a fast CC stream lands only after the drawing. `app.c` does it:
+keys) meanwhile. `app.c` does it:
 
 ```c
 static void app_idle(void);
@@ -151,8 +161,8 @@ static void app_audio(int32_t *out, uint32_t n)
 
 - Runs in the audio interrupt, every 5.8 ms, with `n` = 256 frames at **44.1 kHz** (`FS`).
 - `out` is `L R L R ...`, **already zero**: add your sound to it. Full scale is **±32767** (Q15); more is clipped.
-- After you: the MASTER knob, the clip, the USB audio stream (the computer records exactly this), the DAC.
-  The DAC gets it 6 dB under its full scale, so the FM-1's output stage does not distort.
+- After you: the volume, the clip, the USB audio stream (the computer records exactly this), the DAC. The DAC gets it
+  6 dB under its full scale, so the output stage does not distort.
 - Keep it fast and simple: no flash, no screen, no waiting. Talk to the main loop through `volatile` variables
   (one writer each). If a render runs late the sound breaks up; see [RULES.md](RULES.md).
 
@@ -161,12 +171,11 @@ Pitch: a 32-bit phase that wraps is an oscillator with no division at run time: 
 
 ## MIDI
 
-USB-MIDI (class compliant) and, on the FM-1, the **TRS MIDI IN** jack (31250 baud, polled at 2 kHz: sloopDX's parser,
-with Felucca Salt's fix for the ring). Both land in one queue.
+USB-MIDI, class compliant. The SMK-37 has no MIDI jack.
 
 | | |
 | --- | --- |
-| `midi_get(&status, &d1, &d2)` | the next message: **1** from USB, **2** from the TRS jack, 0 = none. Call it from the main loop until 0 |
+| `midi_get(&status, &d1, &d2)` | the next message, 0 = none. Call it from the main loop until 0 |
 | `midi_send(status, d1, d2)` | send one message over USB (from the main loop only) |
 
 `status` includes the channel: `0x90` note on channel 1, `0x93` channel 4; a note on with velocity 0 is a note off.
@@ -174,16 +183,15 @@ Channel messages come through, and of the system messages the clock and transpor
 note), `0xFA` start, `0xFB` continue, `0xFC` stop (`d1`, `d2` are 0). SysEx is the platform's (the updater) and does
 not reach the app; other system messages are dropped.
 
-A channel of your own, for both ways (Dinghy's `dinghy.c` had PRESETS turn it, OMNI or 1..16, kept in flash; `app.c` takes any channel in, sends on 1):
+A channel of your own, for both ways:
 
 ```c
 if (ch && (st & 15u) != ch - 1u) continue;          /* in: not ours */
 midi_send(0x90u | (ch ? ch - 1u : 0u), note, vel);  /* out */
 ```
 
-The tempo of an incoming clock: the time between every 24th `0xF8`, `60000 / ms` BPM (Dinghy's `dinghy.c` showed it and
-blinked PLAY on the beat). `midi_send(0xF8, 0, 0)` sends a clock, if your firmware is the master. The SMK-37 has no TRS MIDI
-IN (its pin is a key-matrix row there): `midi_get` returns only 1 on it.
+The tempo of an incoming clock: the time between every 24th `0xF8`, `60000 / ms` BPM. `midi_send(0xF8, 0, 0)` sends
+a clock, if your firmware is the master.
 
 ## Storage: settings, blobs, slots
 
@@ -196,16 +204,21 @@ static int slot_load(uint32_t i, void *p, uint32_t n);         /* slot i of NSLO
 static int slot_save(uint32_t i, const void *p, uint32_t n);
 ```
 
-| | how much | where (FM-1) | where (SMK-37) |
-| --- | --- | --- | --- |
-| settings | up to `SECTOR_MAX` (4084 B) | 0xFC000 | 0x9D000 |
-| blobs 0..7 (presets, patterns) | up to 4084 B each | 0xF4000.. | 0x9E000.. |
-| slots 0..7 (songs, samples) | up to `SLOT_MAX` (16372 B) each | 0x97000.. | 0xC2000.. |
+| | how much | where |
+| --- | --- | --- |
+| settings | up to `SECTOR_MAX` (4084 B) | 0x9D000 |
+| blobs 0..7 (presets, patterns) | up to 4084 B each | 0x9E000.. |
+| slots 0..7 (songs, samples) | up to `SLOT_MAX` (16372 B) each | 0xC2000.. |
 
 Each is kept with a magic, its length and a CRC32 ([store.h](../firmware/src/store.h)). A change of size, another
 firmware's data or a broken save reads as "nothing saved": start from your defaults then. `settings_load` and
 `blob_load` leave `p` alone when they fail; `slot_load` reads straight into `p` (no buffer that big), so on -1 it holds
-rubbish. Give your fork its own `STORE_MAGIC` (store.h), so it never takes another Dinghy fork's data for its own.
+rubbish. Give your firmware its own `STORE_MAGIC`.
+
+**The store's owner.** The SMK-37 firmwares built on the [fm1-to-smk37](https://github.com/genkigenki/fm1-to-smk37)
+kit share the store: a tag at 0xAF000 ("SMK37DATA" + `DATA_FAMILY` from tools/build.py, 1..7 of A-Z 0-9) says whose
+data it is. At boot, anything that is not yours (the stock settings, another firmware's data) is cleared once and the
+tag written; it is never read.
 
 **Save when nothing sounds.** Erasing holds the interrupts off for some 50 ms a sector (a slot: four): the sound
 drops out. `app.c` saves 2 s after the last change, once all voices are silent. Flash wears out after about
@@ -215,75 +228,40 @@ drops out. `app.c` saves 2 s after the last change, once all voices are silent. 
 
 | | | |
 | --- | --- | --- |
-| Code + constants | 568 KB | runs straight from flash (`const` tables cost no RAM) |
+| Code + constants | 605 KB | runs straight from flash (`const` tables cost no RAM) |
 | RAM `.data` + `.bss` | 96 KB | your globals and statics |
 | Pool | 336 KB | big buffers, zeroed at boot: `static int16_t delay[65536] __attribute__((section(".pool")));` |
 | Stack | 24 KB | keep big arrays off it: `static` |
 
 The build prints what you use and fails above the limits.
 
-Flash (1 MiB) as Dinghy uses it: the app, the update staging area (FM-1 0xE0000, SMK-37 0xBB000, the platform's) and
-the store above. On the FM-1 the other firmwares of the family keep their data in 0x97000..0xFBFFF too; a new firmware
-simply finds its own magic missing and starts fresh. To store elsewhere, change the places in store.h and its
-`FL_RANGE_OK`: the guard that keeps a bug from erasing anything else. On the SMK-37 the RAM flash driver refuses the
-calibration, the pairing data, the stock resources and key_mac on its own as well, whatever `FL_RANGE_OK` says.
+Flash (1 MiB): the head (0x0-0x3FFF), the app (0x4000-0x9CFFF), the store above it, the update staging area
+(0xBB000-0xBFFFF), the slots (0xC2000-). **Never touched:** the head, BT pairing and the key / pad calibration
+(0xC0000-0xC1FFF), the stock resources (0xF4000-0xFDFFF) and key_mac (0xFF000-). The store's allow-list
+(`FL_RANGE_OK`, store.h) keeps a bug from erasing anything else, and the RAM flash driver refuses the protected ranges
+on its own as well (`FL_GUARD`, hal/fm1_flash_map.h; tests/smk_flash_test.c checks every sector).
 
 ## Build options
 
-`./build.sh` takes `--release X.Y`, `--board fm1|smk37` and, with smk37, `--model pro|elite|mke` (or `BOARD=`,
-`MODEL=`); see [The SMK-37](#the-smk-37). `DINGHY_DEFS="-DFELUCCA_UAC=0" ./build.sh` adds defines for a test build.
-In platform.c (or before `#include "platform.c"` where it says `#ifndef`):
+`./build.sh` takes `--release X.Y` and `--model pro|elite|mke` (or `MODEL=`): the SMK-37 Pro, Elite and MKE-P37 are
+one keyboard under three names, and M-Vave's updater only takes a unit's own factory package back, so each name gets
+its own package. `DINGHY_DEFS="-DFELUCCA_UAC=0" ./build.sh` adds defines for a test build. In platform.c (or before
+`#include "platform.c"` where it says `#ifndef`):
 
 | | | |
 | --- | --- | --- |
 | `FELUCCA_UAC` | 1 | USB audio input (the output to the computer); 0 = MIDI only |
-| `FELUCCA_UART` | FM-1: 1 | the TRS MIDI IN (always 0 on the SMK-37) |
 | `FELUCCA_CDC` | 0 | a USB serial console for debugging (some hosts then hide the audio; see usb.c) |
 | `FELUCCA_OTA` | 1 | the updater. **Leave it on**: without it nothing can install over your firmware but the rescue |
 | `CV_MAX` | 240 x 64 | the biggest canvas, in pixels |
+| `SMK_MASTER_FROM_APP` | 0 | 1: K1 is the app's, the app sets the volume |
 
-The app is built with `-Os`. Leave it so: with `-O2` (the unity build puts usb.c in it) the FM-1's USB-MIDI IN babbled
-on the device and the hub dropped the port (OberVave, 2026-10-13; which line -O2 breaks is not known).
+The app is built with `-Os`. Leave it so: with `-O2` (the unity build puts usb.c in it) the USB-MIDI IN babbled on an
+FM-1 and the host dropped the port.
 
-In tools/build.py, for your fork: `PRODUCT` (the identity), `DATA_FAMILY` (the SMK-37 store's owner tag),
-`SCREEN_NAME` and `SCREEN_COLOUR` (the update loader's screen on the FM-1: your name in your colour, while an
-install runs or after one was cut off).
+In tools/build.py, for your firmware: `IDENT` (the identity's number), `DATA_FAMILY` (the store's owner tag).
 
-## The SMK-37
-
-The M-Vave SMK-37 (Pro, and the same keyboard as SMK-37 Elite and MKE-P37) has the FM-1's chip, a 37-key keybed with
-velocity, 16 pads, 4 faders, 2 wheels and 8 knobs. `./build.sh --board smk37` builds your app for it; nothing in your
-code needs to change, and `#if BOARD_SMK37` reaches the extras. The board layer is genkigenki's
-([fm1-to-smk37](https://github.com/genkigenki/fm1-to-smk37), from his sloop-fm1 port); more in [SMK37.md](SMK37.md).
-
-The FM-1's calls keep working: `fm1_in.notes` are the middle 27 keys (F3..G5), the buttons have the FM-1's names on the
-SMK buttons that mean the same, the knobs too:
-
-| FM-1 | SMK-37 | | FM-1 | SMK-37 |
-| --- | --- | --- | --- | --- |
-| HOME | PATCH | | MASTER (pot) | K1 (turned: the volume) |
-| EDIT | PARA | | `ENC_SELECT` | K2 |
-| ENV | CHORD | | `ENC_ALGORITHM` | K3 |
-| LFO | NOTE REPEAT | | `ENC_PRESETS` | K4 |
-| SEL | SCALE | | `ENC_KNOB1..4` | K5..K8 |
-| GLO | GLOBE | | OCT- OCT+, ARP, FX, SEQ, PLAY, REC | the same |
-| SAVE | BT | | | |
-
-and four more buttons: `BTN_KNOB_BANK`, `BTN_FADER_BANK`, `BTN_LEFT`, `BTN_RIGHT`. The keys have no LEDs (`KEY_LED`
-does nothing); the buttons have.
-
-What the SMK-37 has more:
-
-| | |
-| --- | --- |
-| `fm1_in.key_vel[SMK_KEY_F3 + k]` | the velocity (1..127) of note key k's last press, from the unit's factory curves |
-| `smk_extkey_take()` | the outer keys (C3..E3, G#5..C6): `key << 8 \| velocity` (0 = let go, key 0..36), -1 = none |
-| `fm1_in.keys` | all 37 keys held now (64 bits, bit 0 = the lowest C) |
-| pads | by default the 16 white keys F3..G5 (they set `fm1_in.notes`); `smk_pad_events = 1` makes them events instead: `smk_pad_take()` = `pad << 8 \| velocity` (0 = let go), -1 = none. Pads 0..7 are the top row, 8..15 the bottom row |
-| `padled_set(pad, r, g, b)`, `padled_flush()` | the pads' colours (0..255; ~1 ms to send, only when one changed) |
-| `fm1_in.fader[0..3]` | the faders, 0..127 |
-| `fm1_in.wheel[0]`, `[1]` | the pitch and the mod wheel, raw 0..1023; `smk_pw_bend()` (smk_wheel.h) makes the pitch wheel a self-calibrating bend |
-| `fm1_in.pad_press[pad]` | a held pad's pressure, 0..127 |
-
-The SMK-37's store is shared by the ports of the kit: at boot an owner tag ("SMK37DATA" + `DATA_FAMILY`) says whose
-data it is; anything else is cleared once, never read. Its update loader stays dark (no screen).
+On the host: `tests/run_host.sh [script]`. A script line can press keys (`T keys BITS`, `T vel V` for their
+velocity), a button (`T btn B`), turn an encoder (`T enc E N`), hit a pad (`T pad P V`), move a fader (`T fader F V`)
+or a wheel (`T wheel W RAW`), play an outer key (`T xkey K V`), send MIDI (`T midi S D1 D2`) and take a screenshot
+(`T shot`); [tests/host.c](../tests/host.c) has the full list, [tests/scripts/](../tests/scripts) the examples.
