@@ -1,0 +1,11 @@
+# MIDI in on USB: a note on any channel plays the sine (channel 1, then 3); a key goes out on channel 1
+200 midi 0x90 60 100
+600 midi 0x80 60 0
+800 midi 0x92 64 90
+1000 shot
+1200 midi 0x82 64 0
+1300 vel 100
+1400 keys 1
+1600 keys 0
+2000 shot
+2500 end
