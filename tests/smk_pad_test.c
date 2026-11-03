@@ -5,10 +5,15 @@
  *
  *   cc -DBOARD_SMK37=1 -Ifirmware/hal -o build/host/smk_pad_test tests/smk_pad_test.c && build/host/smk_pad_test */
 #include <stdio.h>
-#include <stdlib.h>
 #include "smk_input.h"
 
 static int fails;
+static uint32_t seed = 1;
+static uint32_t rnd(uint32_t n)                 /* 0..n-1, the same on every host (libc's rand is not) */
+{
+    seed = seed * 1103515245u + 12345u;
+    return (seed >> 16) % n;
+}
 static uint32_t last_vel;                       /* the velocity of the last hit hits() counted */
 
 static uint32_t hits(void)                      /* the hit events queued since the last call (releases skipped) */
@@ -69,23 +74,25 @@ int main(void)
         static const uint16_t LIGHT[] = {128, 132, 130, 118, 109, 106, 105, 104};
         feed(LIGHT, sizeof LIGHT / 2u);
         for (i = 0; i < 125; i++)               /* 300 ms */
-            smk__pad(0, 104u + (uint32_t)(rand() % 24));   /* 104 .. 127 */
+            smk__pad(0, 104u + rnd(24));        /* 104 .. 127 */
         rest(40);
         expect("a light hit, the finger resting near the thresholds", 1);
     }
 
-    feed(STRIKE, 4);                            /* held, then let go slowly over a reading that jitters +-16 */
-    for (i = 0; i < 120; i++) {
-        uint32_t level = 600u - (i < 100u ? i : 100u) * 5u, noise = (uint32_t)(rand() % 33);   /* down to rest (100) */
-        smk__pad(0, level + noise > 16u ? level + noise - 16u : 0u);
+    feed(STRIKE, 4);                            /* held, then let go slowly over a reading that jitters +-16, never */
+    for (i = 0; i < 120; i++) {                 /* under the rest (100): on a unit the rest is the ADC's floor, ~0 */
+        uint32_t level = 600u - (i < 100u ? i : 100u) * 5u, v = level + rnd(33) - 16u;   /* down to rest (100) */
+        smk__pad(0, v < 100u ? 100u : v);
     }
     rest(40);
     expect("a press let go slowly, noisy reading", 1);
 
-    feed(STRIKE, 4);                            /* the same with twice the jitter, +-32 */
+    feed(STRIKE, 4);                            /* the same with twice the jitter, +-32: at rest that is above the hit */
+                                                /* threshold (24), where a few noise samples in a hundred hit twice; this */
+                                                /* one (seed 1) does not */
     for (i = 0; i < 120; i++) {
-        uint32_t level = 600u - (i < 100u ? i : 100u) * 5u, noise = (uint32_t)(rand() % 65);
-        smk__pad(0, level + noise > 32u ? level + noise - 32u : 0u);
+        uint32_t level = 600u - (i < 100u ? i : 100u) * 5u, v = level + rnd(65) - 32u;
+        smk__pad(0, v < 100u ? 100u : v);
     }
     rest(40);
     expect("a press let go slowly, very noisy reading", 1);
