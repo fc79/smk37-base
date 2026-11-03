@@ -14,10 +14,12 @@
  * for the app (platform.c, recovery.c) and the loader (loader.c); extend it here for another part. */
 #if BOARD_SMK37
 /* SMK-37 Pro: 0xEB6014, 1 MiB, read from a unit over mask-ROM UBOOT (2026-10-09; jl-uboot-tool "Online device:
- * ID: 0xeb6014"). The driver uses only generic SPI NOR commands (9F, 05/35, 06, 20, 02, 0B). */
-#define FL_JEDEC_OK(id) ((id) == 0xEB6014u || (id) == 0x856014u)
+ * ID: 0xeb6014"). The driver uses only generic SPI NOR commands (9F, 05/35, 06, 20, 02, 0B). Units sold since autumn
+ * 2026 may carry a UC25HQ80 (0xB36014) instead of the Puya P25Q80 (0x856014): same size, the same commands (the
+ * Firmware Hub's notice; Dinghy and OberVave accept it too). */
+#define FL_JEDEC_OK(id) ((id) == 0xEB6014u || (id) == 0x856014u || (id) == 0xB36014u)
 #else
-#define FL_JEDEC_OK(id) ((id) == 0x856014u)
+#define FL_JEDEC_OK(id) ((id) == 0x856014u || (id) == 0xB36014u)
 #endif
 
 #if BOARD_SMK37

@@ -31,6 +31,8 @@ Measured and tuned on an SMK-37 Pro (`tests/smk_pad_test.c` covers it):
 
 - `SMK_MASTER_FROM_APP`: 1 gives K1 to the app, which then sets the volume itself (default 0: K1 is the volume).
 - `gfx.c`: the host build on macOS (no `.pool` section there).
+- The flash chip of newer units, UC25HQ80 (`0xB36014`), is accepted next to the older parts, by the app and the update
+  loader (`FL_JEDEC_OK`, `hal/fm1_flash_map.h`); not yet tried on such a unit.
 - The FM-1's code paths in `platform.c`, `firmware/hal/` and `firmware/loader/` are kept, unchanged, and not built.
 
 ## Build and packages
