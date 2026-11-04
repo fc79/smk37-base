@@ -259,13 +259,13 @@ static int slot_save(uint32_t i, const void *p, uint32_t n) { return i < NSLOT ?
 static int blobs_load(uint32_t i, uint32_t k, void *p, uint32_t max, uint32_t *n)
 {
     uint32_t at = BLOBS_AT + i * 0x1000u, h[3];
-    if (!flash_ok || i + k > NBLOB || st_read(at, h, sizeof h) || h[0] != (BLOBS_MAGIC ^ STORE_MAGIC) || h[1] > max ||
+    if (!flash_ok || !k || i >= NBLOB || k > NBLOB - i || st_read(at, h, sizeof h) || h[0] != (BLOBS_MAGIC ^ STORE_MAGIC) || h[1] > max ||
         h[1] > k * 0x1000u - sizeof h || st_read(at + sizeof h, p, h[1]) || crc32(p, h[1]) != h[2])
         return -1;
     *n = h[1];
     return 0;
 }
-static int blobs_save(uint32_t i, uint32_t k, const void *p, uint32_t n) { return i + k <= NBLOB ? area_save(BLOBS_AT + i * 0x1000u, k, BLOBS_MAGIC ^ STORE_MAGIC, p, n) : -1; }
+static int blobs_save(uint32_t i, uint32_t k, const void *p, uint32_t n) { return k && i < NBLOB && k <= NBLOB - i ? area_save(BLOBS_AT + i * 0x1000u, k, BLOBS_MAGIC ^ STORE_MAGIC, p, n) : -1; }
 #if BOARD_SMK37
 /* the store's owner (the kit's convention, store.h): our tag, load as ever; anything else (the stock settings,
  * another port's data) is cleared once and the tag written, before the audio starts */

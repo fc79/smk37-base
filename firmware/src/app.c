@@ -78,22 +78,22 @@ static void play(uint32_t note, uint32_t vel)
 {
     uint32_t v, pick = 0, best = 0xFFFFFFFFu;
     if (note > 127u || !vel) return;
-    for (v = 0; v < NV; v++) {                  /* the same note, else a free voice, else the oldest */
-        uint32_t score = voice[v].note == note && voice[v].gate ? 0u
-                       : voice[v].gate ? 0x80000000u + voice[v].age : (uint32_t)voice[v].amp + 1u;
+    for (v = 0; v < NV; v++) {                  /* a free voice (the quietest), else the oldest */
+        uint32_t score = voice[v].gate ? 0x80000000u + voice[v].age : (uint32_t)voice[v].amp;
         if (score < best) { best = score; pick = v; }
     }
     voice[pick].note = (uint8_t)note;
     voice[pick].age = ++ages;
     voice[pick].inc = INC_C9[note % 12u] >> (10u - note / 12u);
-    voice[pick].gate = (int32_t)(vel * 90u);    /* 127 -> 11430: four voices stay under full scale */
+    voice[pick].gate = (int32_t)(vel << 6);     /* 127 -> 8128: four voices stay under full scale */
 }
-static void stop(uint32_t note)
-{
-    uint32_t v;
+static void stop(uint32_t note)                 /* the oldest voice playing the note: a key and a pad on one note */
+{                                               /* each keep their own */
+    uint32_t v, pick = NV, best = 0xFFFFFFFFu;
     for (v = 0; v < NV; v++)
-        if (voice[v].note == note)
-            voice[v].gate = 0;
+        if (voice[v].gate && voice[v].note == note && voice[v].age < best) { best = voice[v].age; pick = v; }
+    if (pick < NV)
+        voice[pick].gate = 0;
 }
 static int sounding(uint32_t note)
 {
@@ -130,7 +130,7 @@ static char *cat(char *p, const char *s) { while (*s) *p++ = *s++; *p = 0; retur
 static char *catn(char *p, int32_t v)           /* decimal (libc.c's fmt_int is not in the host build) */
 {
     char b[12];
-    uint32_t n = 0, u = (uint32_t)(v < 0 ? -v : v);
+    uint32_t n = 0, u = v < 0 ? 0u - (uint32_t)v : (uint32_t)v;
     do { b[n++] = (char)('0' + u % 10u); u /= 10u; } while (u);
     if (v < 0) *p++ = '-';
     while (n) *p++ = b[--n];
@@ -152,7 +152,7 @@ static void event(const char *what, uint32_t id, const char *lab, int32_t v)   /
 
 static void draw_events(void)
 {
-    char s[40], *p;
+    char s[72], *p;                             /* (four "  K8:-2147483648": 64) */
     uint32_t i;
     draw_text_box(0, 82, 240, &FONT_L, ev, C_WHITE, 1);
     draw_text_box(0, 118, 240, &FONT_S, ev2, C_ACC, 1);

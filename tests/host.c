@@ -133,12 +133,15 @@ static uint8_t host_blobs[NBLOB][NBLOB * 0x1000u + 4];   /* (blobs_*: a record o
 static int blobs_load(uint32_t i, uint32_t k, void *p, uint32_t max, uint32_t *n)
 {
     uint8_t *a;
-    if (i + k > NBLOB || !host_blobs[i][0]) return -1;
+    uint32_t len;
+    if (!k || i >= NBLOB || k > NBLOB - i || !host_blobs[i][0]) return -1;
     a = host_blobs[i];
-    *n = (uint32_t)(a[1] | a[2] << 8 | a[3] << 16);
-    return host_load(a, max < k * 0x1000u - 12u ? max : k * 0x1000u - 12u, p, *n);
+    len = (uint32_t)(a[1] | a[2] << 8 | a[3] << 16);
+    if (host_load(a, max < k * 0x1000u - 12u ? max : k * 0x1000u - 12u, p, len)) return -1;
+    *n = len;                                   /* (as the device: *n only when loaded) */
+    return 0;
 }
-static int blobs_save(uint32_t i, uint32_t k, const void *p, uint32_t n) { return i + k <= NBLOB ? host_save(host_blobs[i], k * 0x1000u - 12u, p, n, "blobs", i) : -1; }
+static int blobs_save(uint32_t i, uint32_t k, const void *p, uint32_t n) { return k && i < NBLOB && k <= NBLOB - i ? host_save(host_blobs[i], k * 0x1000u - 12u, p, n, "blobs", i) : -1; }
 
 static uint8_t mq[64][4];                       /* status, data 1, data 2, source (1 USB, 2 TRS) */
 static uint32_t mq_w, mq_r;
@@ -209,11 +212,11 @@ static void read_script(const char *path)
         else if (!strcmp(what, "wheel")) { sscanf(line, "%*u %*s %u %u", &a, &b); e.smk = HS_WHEEL; e.sa = (uint8_t)a; e.sb = (uint16_t)b; }
         else if (!strcmp(what, "xkey")) { sscanf(line, "%*u %*s %u %u", &a, &b); e.smk = HS_XKEY; e.sa = (uint8_t)a; e.sb = (uint16_t)b; }
         else if (!strcmp(what, "shot")) e.smk = HS_SHOT;   /* (any board: the screen now -> OUT-<ms>.ppm) */
-        else if (!strcmp(what, "expect") && host_xn < 4096) {   /* expect V NAME [A B C D] */
-            int *x = host_xarg[host_xn], k;
+        else if (!strcmp(what, "expect")) {    /* expect V NAME [A B C D]; a line it cannot read fails the run */
+            int *x = host_xarg[host_xn < 4096 ? host_xn : 0], k;
             char nm[16] = "";
-            k = sscanf(line, "%*u %*s %i %15s %i %i %i %i", &x[0], nm, &x[1], &x[2], &x[3], &x[4]);
-            if (k < 2) continue;
+            k = host_xn < 4096 ? sscanf(line, "%*u %*s %i %15s %i %i %i %i", &x[0], nm, &x[1], &x[2], &x[3], &x[4]) : 0;
+            if (k < 2) { printf("bad or too many expect lines: %s", line); host_fails++; continue; }
             memcpy(host_xname[host_xn], nm, 16);
             e.smk = HS_EXPECT; e.sb = (uint16_t)host_xn; e.sa = (uint8_t)(k - 2);
             host_xn++;
@@ -406,6 +409,8 @@ static void platform_poll(void)                 /* one call = one millisecond */
     if (fm1_ms >= end_ms) {
         write_wav();
         perf_report();
+        for (; step < script_n; step++)         /* an expect after the end was never checked */
+            if (script[step].smk == HS_EXPECT) { printf("expect %s after the end\n", host_xname[script[step].sb]); host_fails++; }
         if (host_fails) printf("%d expectation(s) FAILED\n", host_fails);
         exit(host_fails ? 1 : 0);
     }

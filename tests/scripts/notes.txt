@@ -1,0 +1,10 @@
+# a key and a pad on the same note (F3, 53) keep a voice each: letting go of one leaves the other
+100 vel 100
+110 keys 0x1
+150 pad 8 100
+200 expect 1 sounding 53
+300 pad 8 0
+350 expect 1 sounding 53
+400 keys 0
+450 expect 0 sounding 53
+500 end

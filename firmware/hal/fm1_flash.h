@@ -275,6 +275,7 @@ static int fl_sliced(uint32_t op, uint32_t off, const uint8_t *src, uint32_t n) 
     int rc = FL_FAR(fl_slice_ram)(op, off, src, n, FL_SLICE_US);
     irq_restore(f);
     while (rc == 1) {
+        if (k > FL_SLICES) return -5;             /* the last slice ran to the end and still reads suspended */
         fm1_delay_us(20u);                        /* the interrupts waiting run now */
         fm1_wdt_feed();
         f = irq_save();
