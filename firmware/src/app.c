@@ -305,3 +305,15 @@ static void app_main(void)
         }
     }
 }
+
+#ifdef DINGHY_HOST
+static int host_probe(const char *name, const int *a, int n, int *got)   /* tests/host.c's "T expect V NAME [A..]" */
+{
+    uint32_t a0 = n > 0 ? (uint32_t)a[0] : 0u;
+    if (!strcmp(name, "oct")) *got = set.oct;                          /* the octave, -2..+2 */
+    else if (!strcmp(name, "sounding")) *got = sounding(a0);           /* sounding NOTE: 1 while a voice plays it */
+    else if (!strcmp(name, "enc")) *got = (int)enc_pos[a0 & 7u];       /* enc K: encoder K's position (0 = K1) */
+    else return -1;                                                    /* a name the app does not know */
+    return 0;
+}
+#endif

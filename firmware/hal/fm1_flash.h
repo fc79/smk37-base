@@ -194,6 +194,53 @@ static RAMFN int fl_read_ram(uint32_t off, uint8_t *dst, uint32_t n)   /* 0x0B f
     return 0;
 }
 
+/* An erase or a page program in slices, so the sound keeps playing while the app saves (ciapibox 0.1.20, fc79). A
+ * slice (IRQs off): start the op (FLS_ERASE, FLS_PROG) or resume it (FLS_RESUME, 0x7A), let it run up to slice_us,
+ * then suspend it (0x75: the part stops within ~30 us and reads work again) and switch XIP back on. Returns 0 done,
+ * 1 suspended (call again with FLS_RESUME), < 0 an error. The FM-1's Puya suspends an erase in 22 us; if a suspend
+ * does not take (busy 200 us after it), or with slice_us 0, the slice waits for the end, as fl_erase4k_ram /
+ * fl_prog_ram do. off / n: the area (an erase: 4096), also on resume. */
+enum { FLS_ERASE, FLS_PROG, FLS_RESUME };
+static uint32_t fl_sus_miss;                      /* suspends the part ignored (it then finished in one go) */
+static RAMFN int fl_slice_ram(uint32_t op, uint32_t off, const uint8_t *src, uint32_t n, uint32_t slice_us)
+{
+    fl_saved_t s; uint32_t t0, i; int rc;
+    if (op == FLS_ERASE ? (!FL_GUARD(off, 0x1000u) || (off & 0xFFFu) || n != 4096u)
+                        : (!FL_GUARD(off, n) || n == 0 || n > 4096u ||
+                           (op == FLS_PROG && (n > 256u || ((off & 0xFFu) + n) > 256u))))
+        return -1;
+    if (fl_enter(&s)) return -2;
+    if (op == FLS_RESUME) {
+        fl_cs(0); fl_tx(0x7A); fl_cs(1);
+    } else {
+        fl_wren();
+        if (!(fl_rdsr(0x05) & 2u)) { fl_exit(&s); return -3; }       /* WEL did not set */
+        fl_cs(0);
+        if (op == FLS_ERASE) { fl_tx(0x20); fl_addr(off); }
+        else { fl_tx(0x02); fl_addr(off); for (i = 0; i < n; i++) fl_tx(src[i]); }
+        fl_cs(1);
+    }
+    rc = 1;
+    t0 = T4_CNT;
+    while ((T4_CNT - t0) / 24u < slice_us)
+        if (!(fl_rdsr(0x05) & 1u)) { rc = 0; break; }
+    if (rc) {
+        if (slice_us) {
+            fl_cs(0); fl_tx(0x75); fl_cs(1);                      /* suspend */
+            t0 = T4_CNT;
+            while ((fl_rdsr(0x05) & 1u) && (T4_CNT - t0) / 24u < 200u) ;
+        }
+        if (fl_rdsr(0x05) & 1u) {                                 /* still busy: to the end */
+            if (slice_us) fl_sus_miss++;
+            rc = fl_wait_ready(500000u, &i) ? -4 : 0;
+        } else
+            rc = (fl_rdsr(0x35) & 0x84u) ? 1 : 0;                 /* SR2 SUS1 / SUS2: suspended; else it ended */
+    }
+    fl_inval(off, n);                                             /* the cache holds nothing from before */
+    fl_exit(&s);
+    return rc;
+}
+
 /* ---- XIP side (normal .text) ---- */
 
 /* Once at boot, before any XIP read of the data region: map the data area
@@ -218,6 +265,34 @@ static int fl_erase4k(uint32_t off, uint32_t *took_us)
     int rc = FL_FAR(fl_erase4k_ram)(off, took_us);
     irq_restore(f);
     return rc;
+}
+
+#define FL_SLICE_US 400u                          /* a slice: the audio ISR (5.8 ms blocks) waits at most this */
+#define FL_SLICES 4000u                           /* then to the end in one go (an erase: ~50 ms worst) */
+static int fl_sliced(uint32_t op, uint32_t off, const uint8_t *src, uint32_t n)   /* interrupts on between slices */
+{
+    uint32_t f = irq_save(), k = 0;
+    int rc = FL_FAR(fl_slice_ram)(op, off, src, n, FL_SLICE_US);
+    irq_restore(f);
+    while (rc == 1) {
+        fm1_delay_us(20u);                        /* the interrupts waiting run now */
+        fm1_wdt_feed();
+        f = irq_save();
+        rc = FL_FAR(fl_slice_ram)(FLS_RESUME, off, src, n, ++k < FL_SLICES ? FL_SLICE_US : 0u);
+        irq_restore(f);
+    }
+    return rc;
+}
+static int fl_write_sliced(uint32_t off, const uint8_t *src_ram, uint32_t n)
+{
+    while (n) {
+        uint32_t chunk = 256u - (off & 0xFFu);
+        int rc;
+        if (chunk > n) chunk = n;
+        if ((rc = fl_sliced(FLS_PROG, off, src_ram, chunk)) != 0) return rc;
+        off += chunk; src_ram += chunk; n -= chunk;
+    }
+    return 0;
 }
 
 static int fl_write(uint32_t off, const uint8_t *src_ram, uint32_t n)

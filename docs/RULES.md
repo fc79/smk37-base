@@ -5,8 +5,11 @@ has habits. The build catches most of them.
 
 ## Integers only
 
-- **No `float`, no `double`.** There is no FPU and no libgcc to emulate one: the link fails. Use fixed point:
-  Q15 (a value times 32768) for levels, Q12 for gains, a 32-bit phase for oscillators.
+- **No `float`, no `double`** in the default build: no libgcc to emulate them, the link fails. Use fixed point:
+  Q15 (a value times 32768) for levels, Q12 for gains, a 32-bit phase for oscillators. The AC79 does have a
+  single-precision FPU: `-mcpu=r3 -mfprev1 -ffp-contract=off` on the app's flags (`build_app` in tools/build.py) turns
+  it on, floats in the audio interrupt included, as ciapibox and Drumtonic's FM-1 app build. `double` stays out
+  everywhere.
 - **No 64-bit division.** `int64_t` multiplication is fine; `a / b` or `a % b` on 64-bit values needs
   `__udivdi3`, which is not there: the link fails. Shift instead, or divide 32-bit values.
 - **A division by zero does not crash.** It gives a wrong value (the trap is off, because the compiler may compute

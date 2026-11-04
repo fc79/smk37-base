@@ -1,12 +1,14 @@
-# SMK-37 diagnostics: each kind of control once, a screen after each
+# SMK-37 diagnostics: each kind of control once, a screen after each; "expect" lines check the app's state
 200 shot
 300 vel 90
 400 keys 0x80
+450 expect 1 sounding 60
 500 shot
 600 keys 0
 700 btn 15
 800 shot
 900 enc 3 2
+950 expect 2 enc 3
 1000 shot
 1100 pad 4 110
 1200 shot
@@ -18,4 +20,5 @@
 1800 xkey 36 70
 1900 shot
 2000 xkey 36 0
+2400 expect 0 oct
 2500 end

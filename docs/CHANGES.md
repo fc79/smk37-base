@@ -33,6 +33,10 @@ Measured and tuned on an SMK-37 Pro (`tests/smk_pad_test.c` covers it):
 - `gfx.c`: the host build on macOS (no `.pool` section there).
 - The flash chip of newer units, UC25HQ80 (`0xB36014`), is accepted next to the older parts, by the app and the update
   loader (`FL_JEDEC_OK`, `hal/fm1_flash_map.h`); not yet tried on such a unit.
+- Saving while the sound plays: `store_sliced = 1` erases and writes in slices of 400 us, the flash suspended
+  between them (`fl_slice_ram`, `fl_sliced`, `fl_write_sliced` in `hal/fm1_flash.h`, from ciapibox); tried on an
+  FM-1, not yet on an SMK-37.
+- `blobs_load` / `blobs_save`: one record over several blobs, of the length it had when saved.
 - The FM-1's code paths in `platform.c`, `firmware/hal/` and `firmware/loader/` are kept, unchanged, and not built.
 
 ## Build and packages
@@ -48,6 +52,8 @@ Measured and tuned on an SMK-37 Pro (`tests/smk_pad_test.c` covers it):
 - SMK-37 only: the FM-1 app, its TRS MIDI and its update tests are gone.
 - New: `tests/smk_pad_test.c` (the pads), `tests/scripts/diag.txt` (every kind of control once),
   `tests/scripts/midi.txt` (USB MIDI in and out).
+- Host scripts can check the app's state: `T expect V NAME [A B C D]`, answered by the app's `host_probe`; a run with a
+  wrong value exits 1.
 
 ## Tools
 

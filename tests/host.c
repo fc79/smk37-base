@@ -106,6 +106,7 @@ static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint1
 #include "gfx.c"
 
 /* storage in RAM (lost at exit), store.h's sizes */
+static uint8_t store_sliced;                    /* (as platform.c: a save while playing) */
 #include "store.h"
 static uint8_t host_set[SECTOR_MAX + 4], host_blob[NBLOB][SECTOR_MAX + 4], host_slot[NSLOT][SLOT_MAX + 4];
 static int host_load(uint8_t *a, uint32_t max, void *p, uint32_t n)   /* a[0] used, a[1..3] the length */
@@ -128,6 +129,16 @@ static int blob_load(uint32_t i, void *p, uint32_t n) { return i < NBLOB ? host_
 static int blob_save(uint32_t i, const void *p, uint32_t n) { return i < NBLOB ? host_save(host_blob[i], SECTOR_MAX, p, n, "blob", i) : -1; }
 static int slot_load(uint32_t i, void *p, uint32_t n) { return i < NSLOT ? host_load(host_slot[i], SLOT_MAX, p, n) : -1; }
 static int slot_save(uint32_t i, const void *p, uint32_t n) { return i < NSLOT ? host_save(host_slot[i], SLOT_MAX, p, n, "slot", i) : -1; }
+static uint8_t host_blobs[NBLOB][NBLOB * 0x1000u + 4];   /* (blobs_*: a record over blobs i .. i + k - 1) */
+static int blobs_load(uint32_t i, uint32_t k, void *p, uint32_t max, uint32_t *n)
+{
+    uint8_t *a;
+    if (i + k > NBLOB || !host_blobs[i][0]) return -1;
+    a = host_blobs[i];
+    *n = (uint32_t)(a[1] | a[2] << 8 | a[3] << 16);
+    return host_load(a, max < k * 0x1000u - 12u ? max : k * 0x1000u - 12u, p, *n);
+}
+static int blobs_save(uint32_t i, uint32_t k, const void *p, uint32_t n) { return i + k <= NBLOB ? host_save(host_blobs[i], k * 0x1000u - 12u, p, n, "blobs", i) : -1; }
 
 static uint8_t mq[64][4];                       /* status, data 1, data 2, source (1 USB, 2 TRS) */
 static uint32_t mq_w, mq_r;
@@ -143,6 +154,11 @@ static void midi_send(uint32_t st, uint32_t d1, uint32_t d2) { printf("%6u ms  M
 
 static void app_audio(int32_t *out, uint32_t n);
 static void app_main(void);
+/* "T expect V NAME [A B C D]": the app's state NAME (with its arguments) must be V at T. The app answers (host_probe:
+ * 0 known, -1 not a name it knows); a run with a wrong one exits 1 */
+static int host_probe(const char *name, const int *a, int n, int *got);
+static char host_xname[4096][16];
+static int host_xarg[4096][5], host_xn, host_fails;
 
 /* the script: at t ms, keys down (bit k = key k, 0 = F3), a button edge, a MIDI message. A script file (the second
  * argument) replaces it, a line each: "T keys MASK" (hex or decimal), "T btn ID", "T midi ST D1 D2" (USB),
@@ -153,7 +169,7 @@ typedef struct { uint32_t t, keys; int btn; uint8_t st, d1, d2; int8_t enc, encn
  * P hit at velocity V, V 0 = let go), "T fader F V" (0..127), "T wheel W RAW" (0 pitch, 1 mod; raw ADC 0..1023),
  * "T xkey K V" (keybed key K 0..36 at V, 0 = let go: the outer keys 0..4, 32..36); any build: "T shot" (the screen
  * at T -> OUT-T.ppm) */
-enum { HS_NONE, HS_VEL, HS_PAD, HS_FADER, HS_WHEEL, HS_XKEY, HS_SHOT };
+enum { HS_NONE, HS_VEL, HS_PAD, HS_FADER, HS_WHEEL, HS_XKEY, HS_SHOT, HS_EXPECT };
 static const host_ev_t SCRIPT0[] = {
     {200, 1u << 7, -1, 0, 0, 0, -1, 0},                         /* C4 */
     {700, 1u << 7 | 1u << 11 | 1u << 14, -1, 0, 0, 0, -1, 0},   /* + E4 G4: a chord */
@@ -193,6 +209,15 @@ static void read_script(const char *path)
         else if (!strcmp(what, "wheel")) { sscanf(line, "%*u %*s %u %u", &a, &b); e.smk = HS_WHEEL; e.sa = (uint8_t)a; e.sb = (uint16_t)b; }
         else if (!strcmp(what, "xkey")) { sscanf(line, "%*u %*s %u %u", &a, &b); e.smk = HS_XKEY; e.sa = (uint8_t)a; e.sb = (uint16_t)b; }
         else if (!strcmp(what, "shot")) e.smk = HS_SHOT;   /* (any board: the screen now -> OUT-<ms>.ppm) */
+        else if (!strcmp(what, "expect") && host_xn < 4096) {   /* expect V NAME [A B C D] */
+            int *x = host_xarg[host_xn], k;
+            char nm[16] = "";
+            k = sscanf(line, "%*u %*s %i %15s %i %i %i %i", &x[0], nm, &x[1], &x[2], &x[3], &x[4]);
+            if (k < 2) continue;
+            memcpy(host_xname[host_xn], nm, 16);
+            e.smk = HS_EXPECT; e.sb = (uint16_t)host_xn; e.sa = (uint8_t)(k - 2);
+            host_xn++;
+        }
         else if (!strcmp(what, "midi") || !strcmp(what, "trs")) {
             sscanf(line, "%*u %*s %i %u %u", (int *)&a, &b, &c);
             e.st = (uint8_t)a; e.d1 = (uint8_t)b; e.d2 = (uint8_t)c; e.src = what[0] == 't' ? 2 : 1;
@@ -292,7 +317,15 @@ static void platform_poll(void)                 /* one call = one millisecond */
     fm1_in.frames++;                            /* (the SMK scans ~625 frames a second; enough for "settled") */
 #endif
     while (step < script_n && script[step].t <= fm1_ms) {
-        if (script[step].smk == HS_SHOT) {
+        if (script[step].smk == HS_EXPECT) {
+            const int *x = host_xarg[script[step].sb];
+            int got = 0, rc = host_probe(host_xname[script[step].sb], x + 1, script[step].sa, &got);
+            int ok = rc == 0 && got == x[0];
+            printf("%6u ms  expect %s", fm1_ms, host_xname[script[step].sb]);
+            for (rc = 0; rc < script[step].sa; rc++) printf(" %d", x[1 + rc]);
+            printf(" = %d: %s%d\n", x[0], ok ? "ok, " : "FAIL, got ", got);
+            if (!ok) host_fails++;
+        } else if (script[step].smk == HS_SHOT) {
             write_ppm(fm1_ms);
         } else if (script[step].smk) {
 #if BOARD_SMK37
@@ -373,7 +406,8 @@ static void platform_poll(void)                 /* one call = one millisecond */
     if (fm1_ms >= end_ms) {
         write_wav();
         perf_report();
-        exit(0);
+        if (host_fails) printf("%d expectation(s) FAILED\n", host_fails);
+        exit(host_fails ? 1 : 0);
     }
 }
 

@@ -202,6 +202,10 @@ static int blob_load(uint32_t i, void *p, uint32_t n);         /* blob i of NBLO
 static int blob_save(uint32_t i, const void *p, uint32_t n);
 static int slot_load(uint32_t i, void *p, uint32_t n);         /* slot i of NSLOT (8): SLOT_SECT (4) sectors each */
 static int slot_save(uint32_t i, const void *p, uint32_t n);
+static int blobs_load(uint32_t i, uint32_t k, void *p, uint32_t max, uint32_t *n);   /* blobs i..i+k-1 as one record;
+                                                                                     * *n: its length as saved */
+static int blobs_save(uint32_t i, uint32_t k, const void *p, uint32_t n);
+static uint8_t store_sliced;                    /* 1: the saves above erase and write in slices, the sound playing on */
 ```
 
 | | how much | where |
@@ -213,16 +217,23 @@ static int slot_save(uint32_t i, const void *p, uint32_t n);
 Each is kept with a magic, its length and a CRC32 ([store.h](../firmware/src/store.h)). A change of size, another
 firmware's data or a broken save reads as "nothing saved": start from your defaults then. `settings_load` and
 `blob_load` leave `p` alone when they fail; `slot_load` reads straight into `p` (no buffer that big), so on -1 it holds
-rubbish. Give your firmware its own `STORE_MAGIC`.
+rubbish. `blobs_save` / `blobs_load` keep one record over blobs `i` to `i + k - 1`, of whatever length it had when
+saved (up to k sectors less 12 B): for what grows and shrinks. They use the same sectors as `blob_save`: give each
+blob one use. Like `slot_load`, `blobs_load` reads straight into `p`. Give your firmware its own `STORE_MAGIC`.
 
 **The store's owner.** The SMK-37 firmwares built on the [fm1-to-smk37](https://github.com/genkigenki/fm1-to-smk37)
 kit share the store: a tag at 0xAF000 ("SMK37DATA" + `DATA_FAMILY` from tools/build.py, 1..7 of A-Z 0-9) says whose
 data it is. At boot, anything that is not yours (the stock settings, another firmware's data) is cleared once and the
 tag written; it is never read.
 
-**Save when nothing sounds.** Erasing holds the interrupts off for some 50 ms a sector (a slot: four): the sound
-drops out. `app.c` saves 2 s after the last change, once all voices are silent. Flash wears out after about
-100,000 erases of a sector: never save in a loop.
+**Save when nothing sounds, or in slices.** Erasing holds the interrupts off for some 50 ms a sector (a slot: four):
+the sound drops out. `app.c` saves 2 s after the last change, once all voices are silent. To save while it plays, set
+`store_sliced = 1` before the save: each erase and write then runs in slices of 400 us (`FL_SLICE_US`), suspended
+between them so the audio interrupt runs (`fl_slice_ram` in [fm1_flash.h](../firmware/hal/fm1_flash.h), from
+ciapibox). A save takes longer, and `settings_save` and the others still block the main loop until done. If the flash
+part ignores the suspend, the slice waits for the end, as an ordinary save. Tried on an FM-1 (its flash is the
+SMK-37 Pro's 0x856014), not yet on an SMK-37. Flash wears out after about 100,000 erases of a sector: never save in a
+loop.
 
 ## Memory and flash
 
@@ -264,4 +275,7 @@ In tools/build.py, for your firmware: `IDENT` (the identity's number), `DATA_FAM
 On the host: `tests/run_host.sh [script]`. A script line can press keys (`T keys BITS`, `T vel V` for their
 velocity), a button (`T btn B`), turn an encoder (`T enc E N`), hit a pad (`T pad P V`), move a fader (`T fader F V`)
 or a wheel (`T wheel W RAW`), play an outer key (`T xkey K V`), send MIDI (`T midi S D1 D2`) and take a screenshot
-(`T shot`); [tests/host.c](../tests/host.c) has the full list, [tests/scripts/](../tests/scripts) the examples.
+(`T shot`) or check the app's state (`T expect V NAME [A B C D]`: the app's `host_probe` answers what NAME is, and a
+run with a wrong value fails); [tests/host.c](../tests/host.c) has the full list, [tests/scripts/](../tests/scripts)
+the examples ([diag.txt](../tests/scripts/diag.txt) has three `expect` lines, `app.c` knows `oct`, `sounding NOTE`,
+`enc K`).

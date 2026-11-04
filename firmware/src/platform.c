@@ -216,6 +216,8 @@ static int area_load(uint32_t at, uint32_t max, uint32_t magic, void *p, uint32_
         return -1;
     return crc32(p, n) == h[2] ? 0 : -1;
 }
+static uint8_t store_sliced;                    /* the app sets it to save while the sound plays: the erases and the
+                                                 * writes in slices of FL_SLICE_US, the interrupts on between them */
 static int area_save(uint32_t at, uint32_t sectors, uint32_t magic, const void *p, uint32_t n)   /* p in RAM */
 {
     uint32_t h[3] = {magic, n, 0}, k, took;
@@ -225,12 +227,13 @@ static int area_save(uint32_t at, uint32_t sectors, uint32_t magic, const void *
     h[2] = crc32(p, n);
     for (k = 0; k < sectors; k++) {
         fm1_wdt_feed();                         /* (~50 ms an erase) */
-        if ((rc = fl_erase4k(at + k * 0x1000u, &took)) != 0)
+        if ((rc = store_sliced ? fl_sliced(FLS_ERASE, at + k * 0x1000u, 0, 4096u) : fl_erase4k(at + k * 0x1000u, &took)) != 0)
             return rc;
     }
-    if ((rc = fl_write(at + sizeof h, p, n)) != 0)
+    if ((rc = (store_sliced ? fl_write_sliced : fl_write)(at + sizeof h, p, n)) != 0)
         return rc;
-    return fl_write(at, (const uint8_t *)h, sizeof h);   /* the header last: a cut save stays invalid */
+    return (store_sliced ? fl_write_sliced : fl_write)(at, (const uint8_t *)h, sizeof h);   /* the header last: a cut
+                                                 * save stays invalid */
 }
 /* one sector each, up to SECTOR_MAX bytes; 0: done. A load that fails leaves p as it was (a copy first) */
 static int sector_load(uint32_t at, void *p, uint32_t n)
@@ -250,6 +253,19 @@ static int blob_save(uint32_t i, const void *p, uint32_t n) { return i < NBLOB ?
 #define SLOT_MAGIC 0x544F4C53u                  /* "SLOT" */
 static int slot_load(uint32_t i, void *p, uint32_t n) { return i < NSLOT ? area_load(SLOTS_AT + i * SLOT_SECT * 0x1000u, SLOT_MAX, SLOT_MAGIC ^ STORE_MAGIC, p, n) : -1; }
 static int slot_save(uint32_t i, const void *p, uint32_t n) { return i < NSLOT ? area_save(SLOTS_AT + i * SLOT_SECT * 0x1000u, SLOT_SECT, SLOT_MAGIC ^ STORE_MAGIC, p, n) : -1; }
+/* blobs i .. i + k - 1 as one record of up to k sectors, its length as it was saved (*n): what grows and shrinks (a
+ * pattern with its automation). Read straight into p: on -1 p holds rubbish */
+#define BLOBS_MAGIC 0x53424C42u                 /* "BLBS" */
+static int blobs_load(uint32_t i, uint32_t k, void *p, uint32_t max, uint32_t *n)
+{
+    uint32_t at = BLOBS_AT + i * 0x1000u, h[3];
+    if (!flash_ok || i + k > NBLOB || st_read(at, h, sizeof h) || h[0] != (BLOBS_MAGIC ^ STORE_MAGIC) || h[1] > max ||
+        h[1] > k * 0x1000u - sizeof h || st_read(at + sizeof h, p, h[1]) || crc32(p, h[1]) != h[2])
+        return -1;
+    *n = h[1];
+    return 0;
+}
+static int blobs_save(uint32_t i, uint32_t k, const void *p, uint32_t n) { return i + k <= NBLOB ? area_save(BLOBS_AT + i * 0x1000u, k, BLOBS_MAGIC ^ STORE_MAGIC, p, n) : -1; }
 #if BOARD_SMK37
 /* the store's owner (the kit's convention, store.h): our tag, load as ever; anything else (the stock settings,
  * another port's data) is cleared once and the tag written, before the audio starts */
